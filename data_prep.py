@@ -51,7 +51,12 @@ def load_pbp_csv(path: str) -> pd.DataFrame:
     # Normalize string columns
     for col in ["OffenseTeam","DefenseTeam","PlayType","YardLineDirection","Description"]:
         if col in df.columns:
-            df[col] = df[col].astype(str)
+            df[col] = df[col].astype("string").str.strip()
+
+    # Standardize PlayType safely
+    if "PlayType" in df.columns:
+        df["PlayType"] = df["PlayType"].str.upper()
+        df.loc[df["PlayType"].isna(), "PlayType"] = pd.NA
 
     return df
 
@@ -137,7 +142,7 @@ def build_possession_ids(df: pd.DataFrame) -> pd.DataFrame:
 
 def compute_trip_table(
     df: pd.DataFrame,
-    exclude_playtypes_for_efficiency: set | None = None
+    exclude_playtypes_for_efficiency = None
 ) -> pd.DataFrame:
     """
     Defines a red-zone "trip" as a possession that contains at least one red-zone efficiency play.
@@ -252,14 +257,19 @@ def compute_defense_metrics(trip: pd.DataFrame, min_trips: int = 10) -> pd.DataF
 
 def add_week_bucket(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Adds a 'Week' bucket for trend charts.
-    Uses ISO week label like '2024-W05' derived from GameDate.
+    Adds an NFL-style sequential week number (W1, W2, ...) based on GameDate.
+    Uses Monday week-start buckets and renumbers from the first week in the dataset.
     """
     out = df.copy()
     if "GameDate" in out.columns:
-        iso = out["GameDate"].dt.isocalendar()
-        out["Week"] = iso["year"].astype(str) + "-W" + iso["week"].astype(int).astype(str).str.zfill(2)
+        week_start = out["GameDate"] - pd.to_timedelta(out["GameDate"].dt.weekday, unit="D")
+        week_start = week_start.dt.normalize()
+
+        # sequential numbering from first week in the data
+        out["WeekNum"] = ((week_start - week_start.min()).dt.days // 7 + 1).astype(int)
+        out["Week"] = out["WeekNum"].map(lambda x: f"W{x}")
     else:
+        out["WeekNum"] = np.nan
         out["Week"] = "Unknown"
     return out
 
